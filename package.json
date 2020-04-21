@@ -1,0 +1,228 @@
+{
+  "name": "zettel",
+  "displayName": "zettel",
+  "description": "Tagdown nodes support",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.44.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:zettelErrors",
+    "onView:zettelRecentlyViewed",
+    "onView:zettelOutboundLinks",
+    "onView:zettelInboundLinks"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Zettel",
+      "properties": {
+        "zettel.uidInput": {
+          "type": "string",
+          "default": "timestamp",
+          "enum": [
+            "counter",
+            "timestamp"
+          ],
+          "description": "The input the unique identifier is based on."
+        },
+        "zettel.formatUidScript": {
+          "type": "string",
+          "default": "./scripts/format-uid",
+          "description": "Script how to format the unique identifier."
+        },
+        "zettel.extension": {
+          "type": "string",
+          "default": ".md",
+          "description": "The extension of the filename."
+        },
+        "zettel.formatContentScript": {
+          "type": "string",
+          "default": "./scripts/format-content",
+          "description": "Script how to format the content initially."
+        },
+        "zettel.cursorPattern": {
+          "type": "string",
+          "default": "\n---\n",
+          "description": "The pattern that determines the initial position of the cursor within the content."
+        },
+        "zettel.formatUrlScript": {
+          "type": "string",
+          "default": "./scripts/format-url",
+          "description": "Script how to format the URL."
+        },
+        "zettel.onSaveScript": {
+          "type": "string",
+          "default": "./scripts/on-save",
+          "description": "Script what to do on save."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "zettel.newUid",
+        "title": "Zettel: New UID"
+      },
+      {
+        "command": "zettel.parseClipboardTextToUid",
+        "title": "Zettel: Parse Clipboard Text to UID"
+      },
+      {
+        "command": "zettel.new",
+        "title": "Zettel: New"
+      },
+      {
+        "command": "zettel.open",
+        "title": "Zettel: Open"
+      },
+      {
+        "command": "zettel.openError",
+        "title": "Zettel: Open Error"
+      },
+      {
+        "command": "zettel.uidToClipboard",
+        "title": "Zettel: UID to Clipboard"
+      },
+      {
+        "command": "zettel.urlToClipboard",
+        "title": "Zettel: URL to Clipboard"
+      },
+      {
+        "command": "zettel.linkToClipboard",
+        "title": "Zettel: Link to Clipboard"
+      },
+      {
+        "command": "zettel.refreshIndex",
+        "title": "Zettel: Refresh Index",
+        "icon": {
+          "light": "resources/light/refresh.svg",
+          "dark": "resources/dark/refresh.svg"
+        }
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "zettel.refreshIndex",
+          "when": "view == zettelOutboundLinks || view == zettelInboundLinks",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "zettel.newUid",
+        "key": "ctrl+i",
+        "mac": "cmd+i"
+      },
+      {
+        "command": "zettel.parseClipboardTextToUid",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i"
+      },
+      {
+        "command": "zettel.new",
+        "key": "ctrl+n",
+        "mac": "cmd+n"
+      },
+      {
+        "command": "zettel.open",
+        "key": "ctrl+o",
+        "mac": "cmd+o"
+      },
+      {
+        "command": "zettel.uidToClipboard",
+        "key": "ctrl+shift+i",
+        "mac": "cmd+shift+i"
+      },
+      {
+        "command": "zettel.urlToClipboard",
+        "key": "ctrl+shift+u",
+        "mac": "cmd+shift+u"
+      },
+      {
+        "command": "zettel.linkToClipboard",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l"
+      }
+    ],
+    "languages": [
+      {
+        "id": "zettel",
+        "aliases": [],
+        "extensions": []
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zettel",
+        "scopeName": "text.markdown.zettel",
+        "path": "./syntaxes/zettel-markdown.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ]
+      }
+    ],
+    "views": {
+      "zettel": [
+        {
+          "id": "zettelErrors",
+          "name": "Errors"
+        },
+        {
+          "id": "zettelRecentlyViewed",
+          "name": "Recently Viewed"
+        },
+        {
+          "id": "zettelOutboundLinks",
+          "name": "Outbound Links"
+        },
+        {
+          "id": "zettelInboundLinks",
+          "name": "Inbound Links"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "zettel",
+          "title": "Zettel",
+          "icon": "resources/zettel.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "zettelOutboundLinks",
+        "contents": "No Zettels found.\n[New Zettel](command:zettel.new)"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "yarn run compile",
+    "compile": "tsc -p ./",
+    "lint": "eslint src --ext ts",
+    "watch": "tsc -watch -p ./",
+    "pretest": "yarn run compile && yarn run lint",
+    "test": "yarn jest"
+  },
+  "devDependencies": {
+    "@types/glob": "^7.1.1",
+    "@types/moment": "^2.13.0",
+    "@types/node": "^13.11.0",
+    "@types/vscode": "^1.44.0",
+    "@typescript-eslint/eslint-plugin": "^2.26.0",
+    "@typescript-eslint/parser": "^2.26.0",
+    "eslint": "^6.8.0",
+    "typescript": "^3.8.3",
+    "vscode-test": "^1.3.0"
+  },
+  "dependencies": {
+    "moment": "^2.24.0"
+  }
+}

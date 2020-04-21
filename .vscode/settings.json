@@ -1,0 +1,14 @@
+{
+  "files.exclude": {
+    "out": false
+  },
+  "search.exclude": {
+    "out": true
+  },
+  "[typescript]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": false,
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}
