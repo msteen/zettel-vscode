@@ -35,6 +35,11 @@
           "default": "./scripts/format-uid",
           "description": "Script how to format the unique identifier."
         },
+        "zettel.zettelsDir": {
+          "type": "string",
+          "default": ".",
+          "description": "The path relative to the workspace to the zettels directory."
+        },
         "zettel.extension": {
           "type": "string",
           "default": ".md",
@@ -121,8 +126,8 @@
       },
       {
         "command": "zettel.parseClipboardTextToUid",
-        "key": "ctrl+alt+i",
-        "mac": "cmd+alt+i"
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
       },
       {
         "command": "zettel.new",
@@ -136,18 +141,18 @@
       },
       {
         "command": "zettel.uidToClipboard",
-        "key": "ctrl+shift+i",
-        "mac": "cmd+shift+i"
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i"
       },
       {
         "command": "zettel.urlToClipboard",
-        "key": "ctrl+shift+u",
-        "mac": "cmd+shift+u"
+        "key": "ctrl+alt+u",
+        "mac": "cmd+alt+u"
       },
       {
         "command": "zettel.linkToClipboard",
-        "key": "ctrl+shift+l",
-        "mac": "cmd+shift+l"
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
       }
     ],
     "languages": [

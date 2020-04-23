@@ -12,21 +12,30 @@ import * as path from "path"
 import * as vscode from "vscode"
 import * as moment from "moment"
 
+if (vscode.workspace.workspaceFolders === undefined || vscode.workspace.workspaceFolders.length === 0) {
+  throw new Error("The extension can only work with a workspace folder present")
+}
+
+const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath
+
+function getScriptConfig(name: string) {
+  // Environment variables are not resolved in settings, so we do it ourselves.
+  // See: https://github.com/microsoft/vscode/issues/2809
+  return config
+    .get<string>(name)!
+    .replace(/\${workspaceFolder}/g, workspaceFolder)
+    .replace(/\${env:([A-Z_]+)}/g, (_, name: string) => process.env[name] || "")
+}
+
 const config = vscode.workspace.getConfiguration("zettel")
 const uidInput = config.get<string>("uidInput")!
-const formatUid = require(config.get<string>("formatUidScript")!)
-// Environment variables are not resolved in settings, so we do it ourselves.
-// See: https://github.com/microsoft/vscode/issues/2809
-const dataDir = config
-  .get<string>("dataDir")!
-  .replace(/\${env:([A-Z_]+)}/g, (_, name: string) => process.env[name] || "")
+const formatUid = require(getScriptConfig("formatUidScript"))
+const zettelsDir = path.join(workspaceFolder, config.get<string>("zettelsDir")!)
 const extension = config.get<string>("extension")!
-const formatContent = require(config.get<string>("formatContentScript")!)
+const formatContent = require(getScriptConfig("formatContentScript"))
 const cursorPattern = new RegExp(config.get<string>("cursorPattern")!)
-const formatUrl = require(config.get<string>("formatUrlScript")!)
-const onSave = require(config.get<string>("onSaveScript")!)
-
-const zettelsDir = path.join(dataDir, "zettels")
+const formatUrl = require(getScriptConfig("formatUrlScript"))
+const onSave = require(getScriptConfig("onSaveScript"))
 
 function setEditorPosition(position: vscode.Position) {
   const editor = vscode.window.activeTextEditor!
@@ -41,7 +50,7 @@ function positionAfterSeperator(document: vscode.TextDocument): vscode.Position 
 }
 
 function uidToFile(uid: string) {
-  return path.join(dataDir, "zettels", `${uid}${extension}`)
+  return path.join(zettelsDir, `${uid}${extension}`)
 }
 
 function uidToFileUri(uid: string) {
@@ -117,7 +126,7 @@ async function newZettel(context: vscode.ExtensionContext) {
   const input = nextUidInput(context)
   const uid = formatUid(input)
   const file = uidToFile(uid)
-  const content = formatContent(uid, input)
+  const content = formatContent(uid, uidInput, input)
   try {
     await fs.promises.writeFile(file, content, { flag: "wx" })
   } catch (e) {
@@ -137,10 +146,20 @@ function showZettelError(uid: string) {
   return showZettel(uid)
 }
 
-async function openZettel() {
+async function pickZettel() {
   const uid = await vscode.window.showQuickPick(listUids())
   if (uid === undefined) return
   await showZettel(uid)
+}
+
+async function openZettel() {
+  const editor = vscode.window.activeTextEditor!
+  let uid = getLinkedUid(editor.document, editor.selection.start)
+  if (uid !== null) {
+    await showZettel(uid)
+  } else {
+    await pickZettel()
+  }
 }
 
 function getActiveUid() {
@@ -222,19 +241,21 @@ class NodeDocumentLinkProvider implements vscode.DocumentLinkProvider {
 class Zettel extends vscode.TreeItem {
   private text: string
   private truncation: string
+  public outbound: Zettel[]
 
-  static create(uid: string) {
-    return new Zettel(uid, vscode.TreeItemCollapsibleState.None)
-  }
-
-  constructor(private uid: string, collapsibleState: vscode.TreeItemCollapsibleState) {
-    super(uid, collapsibleState)
+  constructor(private uid: string) {
+    super(uid, vscode.TreeItemCollapsibleState.None)
     // FIXME: Make a better label.
     // const label = id
     // // FIXME
-    // const outgoing = []
-    // const collapsibleState =
-    //   outgoing.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None
+    this.outbound = Array.from(
+      fs.readFileSync(uidToFile(uid), "utf8").matchAll(/\[\[([^\]]*)\]\]/g),
+      match => new Zettel(match[1]),
+    )
+    this.collapsibleState =
+      this.outbound.length > 0
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.None
     // super(label, collapsibleState)
     // // FIXME
     this.text = ""
@@ -257,18 +278,27 @@ class Zettel extends vscode.TreeItem {
   contextValue = "zettel"
 }
 
-class NodeTreeDataProvider implements vscode.TreeDataProvider<Zettel> {
+class ZettelOutboundLinks implements vscode.TreeDataProvider<Zettel> {
+  private _onDidChangeTreeData: vscode.EventEmitter<Zettel | undefined> = new vscode.EventEmitter<
+    Zettel | undefined
+  >()
+  readonly onDidChangeTreeData: vscode.Event<Zettel | undefined> = this._onDidChangeTreeData.event
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire()
+  }
+
   getTreeItem(element: Zettel): vscode.TreeItem {
     return element
   }
 
-  async getChildren(element?: Zettel) {
-    if (element !== undefined) {
-      // TODO: Find UIDs in element.
-      return []
+  async getChildren(zettel?: Zettel) {
+    if (zettel !== undefined) {
+      // TODO: Find UIDs in zettel.
+      return zettel.outbound
     } else {
       // TODO: Only list root nodes.
-      return (await listUids()).map(uid => Zettel.create(uid))
+      return (await listUids()).map(uid => new Zettel(uid))
     }
   }
 }
@@ -308,7 +338,15 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerDocumentLinkProvider(markdown, new NodeDocumentLinkProvider()),
   )
 
-  vscode.workspace.onWillSaveTextDocument(event => event.waitUntil(Promise.resolve(onSave(event.document))))
+  vscode.workspace.onWillSaveTextDocument(event => {
+    if (event.document.uri.fsPath.endsWith(extension)) {
+      event.waitUntil(Promise.resolve(onSave(event.document)))
+    }
+  })
 
-  vscode.window.registerTreeDataProvider("zettelOutboundLinks", new NodeTreeDataProvider())
+  const zettelOutboundLinks = new ZettelOutboundLinks()
+  vscode.window.registerTreeDataProvider("zettelOutboundLinks", zettelOutboundLinks)
+  const watcher = vscode.workspace.createFileSystemWatcher(path.join(zettelsDir, `*${extension}`))
+  watcher.onDidCreate(() => zettelOutboundLinks.refresh())
+  watcher.onDidDelete(() => zettelOutboundLinks.refresh())
 }
