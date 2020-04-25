@@ -3,350 +3,73 @@
 // https://github.com/nergal-perm/zettelkasten-vscode
 // https://gitlab.com/memorize_it/memorize/-/tree/master
 
-// TODO: Add a graph view: https://www.youtube.com/watch?v=a6yUA46ek6M
-// See: https://js.cytoscape.org/
-// TODO: Look at this: http://tiddlymap.org/
-
 import * as fs from "fs"
-import * as path from "path"
 import * as vscode from "vscode"
-import * as moment from "moment"
+import { inspect } from "util"
+import { config } from "./config"
+import { Zettel } from "./zettel"
+import { ZettelCompletionItemProvider, ZettelDefinitionProvider, ZettelDocumentLinkProvider } from "./links"
+import {
+  showZettel,
+  newUid,
+  parseClipboardTextToUid,
+  newZettel,
+  openZettel,
+  uidToClipboard,
+  urlToClipboard,
+  linkToClipboard,
+  refreshAll,
+} from "./commands"
+import { activateOutboundLinksView } from "./views/outboundLinks"
+import { activateWarningsView } from "./views/warnings"
+import { activateInboundLinksView } from "./views/inboundLinks"
+import { activateStoryRiverView } from "./views/storyRiver"
 
-if (vscode.workspace.workspaceFolders === undefined || vscode.workspace.workspaceFolders.length === 0) {
-  throw new Error("The extension can only work with a workspace folder present")
-}
-
-const workspaceFolder = vscode.workspace.workspaceFolders[0].uri.fsPath
-
-function getScriptConfig(name: string) {
-  // Environment variables are not resolved in settings, so we do it ourselves.
-  // See: https://github.com/microsoft/vscode/issues/2809
-  return config
-    .get<string>(name)!
-    .replace(/\${workspaceFolder}/g, workspaceFolder)
-    .replace(/\${env:([A-Z_]+)}/g, (_, name: string) => process.env[name] || "")
-}
-
-const config = vscode.workspace.getConfiguration("zettel")
-const uidInput = config.get<string>("uidInput")!
-const formatUid = require(getScriptConfig("formatUidScript"))
-const zettelsDir = path.join(workspaceFolder, config.get<string>("zettelsDir")!)
-const extension = config.get<string>("extension")!
-const formatContent = require(getScriptConfig("formatContentScript"))
-const cursorPattern = new RegExp(config.get<string>("cursorPattern")!)
-const formatUrl = require(getScriptConfig("formatUrlScript"))
-const onSave = require(getScriptConfig("onSaveScript"))
-
-function setEditorPosition(position: vscode.Position) {
-  const editor = vscode.window.activeTextEditor!
-  const newSelection = new vscode.Selection(position, position)
-  editor.selection = newSelection
-}
-
-function positionAfterSeperator(document: vscode.TextDocument): vscode.Position {
-  cursorPattern.lastIndex = 0
-  const match = document.getText().match(cursorPattern)
-  return match !== null ? document.positionAt(match.index! + match[0].length) : new vscode.Position(0, 0)
-}
-
-function uidToFile(uid: string) {
-  return path.join(zettelsDir, `${uid}${extension}`)
-}
-
-function uidToFileUri(uid: string) {
-  return vscode.Uri.file(uidToFile(uid))
-}
-
-function nextCount(context: vscode.ExtensionContext) {
-  const count = context.globalState.get<number>("count") || 0
-  context.globalState.update("count", count + 1)
-  return count
-}
-
-let lastTimestamp = 0
-function nextTimestamp() {
-  let timestamp = Date.now()
-  if (timestamp === lastTimestamp) timestamp++
-  lastTimestamp = timestamp
-  return timestamp
-}
-
-function nextUidInput(context: vscode.ExtensionContext) {
-  return uidInput === "count" ? nextCount(context) : nextTimestamp()
-}
-
-async function newUid(context: vscode.ExtensionContext) {
-  vscode.env.clipboard.writeText(formatUid(nextUidInput(context)))
-}
-
-function parseCount(text: string) {
-  const count = Number(text)
-  return Number.isSafeInteger(count) ? count : null
-}
-
-async function parseTimestamp(text: string) {
-  let timestamp = moment(text, [moment.ISO_8601, moment.RFC_2822], true)
-  if (!timestamp.isValid()) {
-    const format = await vscode.window.showInputBox({
-      prompt: `What date time format has text '${text}'?`,
-    })
-    if (!format) return null
-    const newText = await vscode.window.showInputBox({
-      prompt: `Does the text need tweaking?`,
-      value: text,
-    })
-    if (!newText) return null
-    timestamp = moment(newText, format, true)
-  }
-  return timestamp.isValid() ? timestamp.valueOf() : null
-}
-
-async function parseClipboardTextToUid() {
-  const text = await vscode.env.clipboard.readText()
-  const input = uidInput === "timestamp" ? await parseTimestamp(text) : parseCount(text)
-  if (input !== null) {
-    vscode.env.clipboard.writeText(formatUid(input))
-  } else {
-    vscode.window.showErrorMessage(`Could not parse clipboard text '${text}' to a ${uidInput}.`)
-  }
-}
-
-function showZettelDocument(file: string) {
-  return vscode.workspace.openTextDocument(file).then(document => {
-    vscode.window
-      .showTextDocument(document, {
-        preserveFocus: false,
-        preview: false,
-      })
-      .then(() => setEditorPosition(positionAfterSeperator(document)))
-  })
-}
-
-async function newZettel(context: vscode.ExtensionContext) {
-  const input = nextUidInput(context)
-  const uid = formatUid(input)
-  const file = uidToFile(uid)
-  const content = formatContent(uid, uidInput, input)
-  try {
-    await fs.promises.writeFile(file, content, { flag: "wx" })
-  } catch (e) {
-    await vscode.window.showErrorMessage(`File '${file}' could not be created.`)
-  }
-  await showZettelDocument(file)
-}
-
-async function showZettel(uid: string) {
-  await showZettelDocument(uidToFile(uid))
-}
-
-function showZettelError(uid: string) {
-  // TODO: Present the error.
-  // Unconnected
-  // Deadlinks
-  return showZettel(uid)
-}
-
-async function pickZettel() {
-  const uid = await vscode.window.showQuickPick(listUids())
-  if (uid === undefined) return
-  await showZettel(uid)
-}
-
-async function openZettel() {
-  const editor = vscode.window.activeTextEditor!
-  let uid = getLinkedUid(editor.document, editor.selection.start)
-  if (uid !== null) {
-    await showZettel(uid)
-  } else {
-    await pickZettel()
-  }
-}
-
-function getActiveUid() {
-  const editor = vscode.window.activeTextEditor!
-  return path.basename(editor.document.fileName, extension)
-}
-
-async function uidToClipboard() {
-  vscode.env.clipboard.writeText(getActiveUid())
-}
-
-async function urlToClipboard() {
-  vscode.env.clipboard.writeText(formatUrl(getActiveUid()))
-}
-
-async function linkToClipboard() {
-  // TODO: Get the title, truncation, or moment to represent the zettel in one line.
-  // vscode.env.clipboard.writeText(`[](zettel://${getActiveUid()})`)
-  vscode.env.clipboard.writeText(`[[${getActiveUid()}]]`)
-}
-
-async function refreshIndex() {
-  // TODO: Update the graph index.
-  vscode.window.showInformationMessage("refresh")
-}
-
-function getLinkedUid(document: vscode.TextDocument, position: vscode.Position): string | null {
-  const range = document.getWordRangeAtPosition(position, /\[\[[^\]]*\]\]/)
-  if (range === undefined) return null
-  return document.getText(range).replace(/\[\[([^\]]*)\]\]/, "$1")
-}
-
-async function listUids() {
-  return (await vscode.workspace.fs.readDirectory(vscode.Uri.file(zettelsDir)))
-    .filter(entry => entry[1] === vscode.FileType.File && entry[0].endsWith(extension))
-    .map(entry => path.basename(entry[0], extension))
-}
-
-class NodeCompletionItemProvider implements vscode.CompletionItemProvider {
-  public async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {
-    if (getLinkedUid(document, position) === null) return []
-    return (await listUids()).map(uid => new vscode.CompletionItem(uid, vscode.CompletionItemKind.File))
-  }
-}
-
-class NodeDefinitionProvider implements vscode.DefinitionProvider {
-  public async provideDefinition(document: vscode.TextDocument, position: vscode.Position) {
-    const uid = getLinkedUid(document, position)
-    if (uid === null) return []
-    const file = uidToFileUri(uid)
-    return [new vscode.Location(file, positionAfterSeperator(await vscode.workspace.openTextDocument(file)))]
-  }
-}
-
-class NodeDocumentLinkProvider implements vscode.DocumentLinkProvider {
-  private document: vscode.TextDocument | null = null
-
-  provideDocumentLinks(document: vscode.TextDocument) {
-    this.document = document
-    return Array.from(
-      document.getText().matchAll(/\[\[[^\]]*\]\]/g),
-      match =>
-        new vscode.DocumentLink(
-          new vscode.Range(
-            document.positionAt(match.index! + "[[".length),
-            document.positionAt(match.index! + match[0].length - "]]".length),
-          ),
-        ),
-    )
-  }
-
-  async resolveDocumentLink(link: vscode.DocumentLink) {
-    const uid = this.document!.getText(link.range)
-    link.target = uidToFileUri(uid)
-    return link
-  }
-}
-
-class Zettel extends vscode.TreeItem {
-  private text: string
-  private truncation: string
-  public outbound: Zettel[]
-
-  constructor(private uid: string) {
-    super(uid, vscode.TreeItemCollapsibleState.None)
-    // FIXME: Make a better label.
-    // const label = id
-    // // FIXME
-    this.outbound = Array.from(
-      fs.readFileSync(uidToFile(uid), "utf8").matchAll(/\[\[([^\]]*)\]\]/g),
-      match => new Zettel(match[1]),
-    )
-    this.collapsibleState =
-      this.outbound.length > 0
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.None
-    // super(label, collapsibleState)
-    // // FIXME
-    this.text = ""
-    this.truncation = ""
-  }
-
-  // get description(): string {
-  //   // FIXME
-  //   return ""
-  // }
-
-  // iconPath = path.join(__filename, "..", "..", "resources", "post-it.svg")
-
-  command = {
-    title: "Show",
-    command: "zettel.show",
-    arguments: [this.uid],
-  }
-
-  contextValue = "zettel"
-}
-
-class ZettelOutboundLinks implements vscode.TreeDataProvider<Zettel> {
-  private _onDidChangeTreeData: vscode.EventEmitter<Zettel | undefined> = new vscode.EventEmitter<
-    Zettel | undefined
-  >()
-  readonly onDidChangeTreeData: vscode.Event<Zettel | undefined> = this._onDidChangeTreeData.event
-
-  refresh(): void {
-    this._onDidChangeTreeData.fire()
-  }
-
-  getTreeItem(element: Zettel): vscode.TreeItem {
-    return element
-  }
-
-  async getChildren(zettel?: Zettel) {
-    if (zettel !== undefined) {
-      // TODO: Find UIDs in zettel.
-      return zettel.outbound
-    } else {
-      // TODO: Only list root nodes.
-      return (await listUids()).map(uid => new Zettel(uid))
-    }
-  }
-}
+// @ts-ignore
+global.inspect = (...args: any[]) => console.log(...args.map(inspect))
 
 export async function activate(context: vscode.ExtensionContext) {
-  await fs.promises.mkdir(zettelsDir, { recursive: true })
-  // TODO: Use context.workspaceState to keep an index of links.
+  await fs.promises.mkdir(config.zettelsFolder, { recursive: true })
+  await refreshAll()
 
-  context.subscriptions.push(vscode.commands.registerCommand("zettel.newUid", () => newUid(context)))
+  const { registerCommand } = vscode.commands
   context.subscriptions.push(
-    vscode.commands.registerCommand("zettel.parseClipboardTextToUid", () => parseClipboardTextToUid()),
+    ...[
+      registerCommand("zettel.newUid", () => newUid(context)),
+      registerCommand("zettel.parseClipboardTextToUid", () => parseClipboardTextToUid()),
+      registerCommand("zettel.new", args => newZettel(context, args?.uid)),
+      registerCommand("zettel.open", () => openZettel()),
+      registerCommand("zettel.show", (zettel: Zettel) => showZettel(zettel)),
+      registerCommand("zettel.uidToClipboard", () => uidToClipboard()),
+      registerCommand("zettel.urlToClipboard", () => urlToClipboard()),
+      registerCommand("zettel.linkToClipboard", () => linkToClipboard()),
+      registerCommand("zettel.refreshAll", () => refreshAll()),
+    ],
   )
-  context.subscriptions.push(vscode.commands.registerCommand("zettel.new", () => newZettel(context)))
-  context.subscriptions.push(vscode.commands.registerCommand("zettel.open", () => openZettel()))
-  context.subscriptions.push(vscode.commands.registerCommand("zettel.show", (uid: string) => showZettel(uid)))
-  context.subscriptions.push(
-    vscode.commands.registerCommand("zettel.showError", (uid: string) => showZettelError(uid)),
-  )
-  context.subscriptions.push(vscode.commands.registerCommand("zettel.uidToClipboard", () => uidToClipboard()))
-  context.subscriptions.push(vscode.commands.registerCommand("zettel.urlToClipboard", () => urlToClipboard()))
-  context.subscriptions.push(
-    vscode.commands.registerCommand("zettel.linkToClipboard", () => linkToClipboard()),
-  )
-  context.subscriptions.push(vscode.commands.registerCommand("zettel.refreshIndex", () => refreshIndex()))
 
   const markdown = {
     scheme: "file",
     language: "markdown",
   }
   context.subscriptions.push(
-    vscode.languages.registerCompletionItemProvider(markdown, new NodeCompletionItemProvider()),
-  )
-  context.subscriptions.push(
-    vscode.languages.registerDefinitionProvider(markdown, new NodeDefinitionProvider()),
-  )
-  context.subscriptions.push(
-    vscode.languages.registerDocumentLinkProvider(markdown, new NodeDocumentLinkProvider()),
+    ...[
+      vscode.languages.registerCompletionItemProvider(markdown, new ZettelCompletionItemProvider()),
+      vscode.languages.registerDefinitionProvider(markdown, new ZettelDefinitionProvider()),
+      vscode.languages.registerDocumentLinkProvider(markdown, new ZettelDocumentLinkProvider()),
+    ],
   )
 
+  activateWarningsView()
+  activateStoryRiverView()
+  activateOutboundLinksView()
+  activateInboundLinksView()
+
   vscode.workspace.onWillSaveTextDocument(event => {
-    if (event.document.uri.fsPath.endsWith(extension)) {
-      event.waitUntil(Promise.resolve(onSave(event.document)))
+    if (event.document.uri.fsPath.endsWith(config.extension)) {
+      event.waitUntil(Promise.resolve(config.onSave(event.document)))
     }
   })
 
-  const zettelOutboundLinks = new ZettelOutboundLinks()
-  vscode.window.registerTreeDataProvider("zettelOutboundLinks", zettelOutboundLinks)
-  const watcher = vscode.workspace.createFileSystemWatcher(path.join(zettelsDir, `*${extension}`))
-  watcher.onDidCreate(() => zettelOutboundLinks.refresh())
-  watcher.onDidDelete(() => zettelOutboundLinks.refresh())
+  const zettel = Zettel.from(vscode.window.activeTextEditor?.document.uri)
+  if (zettel) Zettel.activate(zettel)
 }

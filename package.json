@@ -10,8 +10,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onView:zettelErrors",
-    "onView:zettelRecentlyViewed",
+    "onView:zettelWarnings",
+    "onView:zettelStoryRiver",
     "onView:zettelOutboundLinks",
     "onView:zettelInboundLinks"
   ],
@@ -32,13 +32,13 @@
         },
         "zettel.formatUidScript": {
           "type": "string",
-          "default": "./scripts/format-uid",
+          "default": "./scripts/formatUid",
           "description": "Script how to format the unique identifier."
         },
-        "zettel.zettelsDir": {
+        "zettel.zettelsFolder": {
           "type": "string",
           "default": ".",
-          "description": "The path relative to the workspace to the zettels directory."
+          "description": "The path relative to the workspace to the zettels folder."
         },
         "zettel.extension": {
           "type": "string",
@@ -47,22 +47,22 @@
         },
         "zettel.formatContentScript": {
           "type": "string",
-          "default": "./scripts/format-content",
+          "default": "./scripts/formatContent",
           "description": "Script how to format the content initially."
         },
-        "zettel.cursorPattern": {
+        "zettel.initCursorPattern": {
           "type": "string",
           "default": "\n---\n",
           "description": "The pattern that determines the initial position of the cursor within the content."
         },
         "zettel.formatUrlScript": {
           "type": "string",
-          "default": "./scripts/format-url",
+          "default": "./scripts/formatUrl",
           "description": "Script how to format the URL."
         },
         "zettel.onSaveScript": {
           "type": "string",
-          "default": "./scripts/on-save",
+          "default": "./scripts/onSave",
           "description": "Script what to do on save."
         }
       }
@@ -85,10 +85,6 @@
         "title": "Zettel: Open"
       },
       {
-        "command": "zettel.openError",
-        "title": "Zettel: Open Error"
-      },
-      {
         "command": "zettel.uidToClipboard",
         "title": "Zettel: UID to Clipboard"
       },
@@ -101,8 +97,8 @@
         "title": "Zettel: Link to Clipboard"
       },
       {
-        "command": "zettel.refreshIndex",
-        "title": "Zettel: Refresh Index",
+        "command": "zettel.refreshAll",
+        "title": "Zettel: Refresh All",
         "icon": {
           "light": "resources/light/refresh.svg",
           "dark": "resources/dark/refresh.svg"
@@ -112,7 +108,7 @@
     "menus": {
       "view/title": [
         {
-          "command": "zettel.refreshIndex",
+          "command": "zettel.refreshAll",
           "when": "view == zettelOutboundLinks || view == zettelInboundLinks",
           "group": "navigation"
         }
@@ -175,12 +171,12 @@
     "views": {
       "zettel": [
         {
-          "id": "zettelErrors",
-          "name": "Errors"
+          "id": "zettelWarnings",
+          "name": "Warnings"
         },
         {
-          "id": "zettelRecentlyViewed",
-          "name": "Recently Viewed"
+          "id": "zettelStoryRiver",
+          "name": "Story River"
         },
         {
           "id": "zettelOutboundLinks",

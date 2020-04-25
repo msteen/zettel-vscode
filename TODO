@@ -1,2 +1,15 @@
 [ ] Figure out a syntax for anchors.
 [ ] Figure out how to quote while referencing to a source.
+
+Split up the project in multiple source files.
+Clone the example Zettelkasten and use it to create an index and update the views accordingly.
+Make a decision about the syntax to use for UIDs vs. titles.
+Add a graph view: https://www.youtube.com/watch?v=a6yUA46ek6M
+See: https://js.cytoscape.org/
+Look at this: http://tiddlymap.org/
+
+tagdown
+  core
+  archive
+  archive-vscode
+  archive-web
