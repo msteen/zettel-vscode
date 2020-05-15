@@ -1,23 +1,17 @@
-import * as fs from "fs"
 import * as moment from "moment"
 import * as vscode from "vscode"
 import { config } from "./config"
-import { nextUidInput, getLinkedUid } from "./utils"
+import { nextUidInput } from "./utils"
 import { Zettel } from "./zettel"
+import { getLinkedZettelAtPosition } from "./links"
 
-export async function newZettel(context: vscode.ExtensionContext, uid?: string) {
-  const input = nextUidInput(context)
-  const zettel = Zettel.create(
-    uid || config.formatUid(input),
-    config.uidInput === "timestamp" ? (input as moment.Moment) : undefined,
-  )
-  const content = config.formatContent(zettel.uid)
-  try {
-    await fs.promises.writeFile(zettel.file, content, { flag: "wx" })
-    zettel.updateContent()
-    await zettel.show()
-  } catch (e) {
+export async function newZettel(context: vscode.ExtensionContext, args: { uid?: string; title?: string }) {
+  const zettel = await Zettel.next(context, args)
+  if (await Zettel.writeNew(zettel)) {
+    return zettel
+  } else {
     await vscode.window.showErrorMessage(`File '${zettel.file}' could not be created.`)
+    return
   }
 }
 
@@ -33,14 +27,14 @@ async function pickZettel() {
     })),
   )
   const zettel = Zettel.from(item?.id)
-  if (zettel === null) return
+  if (!zettel) return
   await zettel.show()
 }
 
 export async function openZettel() {
   const editor = vscode.window.activeTextEditor!
-  let zettel = Zettel.from(getLinkedUid(editor.document, editor.selection.start))
-  if (zettel !== null) {
+  let zettel = getLinkedZettelAtPosition(editor.document, editor.selection.start)
+  if (zettel) {
     await zettel.show()
   } else {
     await pickZettel()
@@ -92,11 +86,10 @@ export function uidToClipboard() {
 }
 
 export function urlToClipboard() {
-  return vscode.env.clipboard.writeText(config.formatUrl(Zettel.active!.uid))
+  return vscode.env.clipboard.writeText(`${config.urlSchema}://${Zettel.active!.uid}`)
 }
 
 export function linkToClipboard() {
-  // TODO: Get the title, truncation, or moment to represent the zettel in one line.
-  // vscode.env.clipboard.writeText(`[](zettel://${Zettel.active!.uid})`)
-  return vscode.env.clipboard.writeText(`[[${Zettel.active!.uid}]]`)
+  const zettel = Zettel.active!
+  return vscode.env.clipboard.writeText(zettel.title ? `[[${zettel.title}]]` : `[#${zettel.uid}]`)
 }

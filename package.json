@@ -55,10 +55,10 @@
           "default": "\n---\n",
           "description": "The pattern that determines the initial position of the cursor within the content."
         },
-        "zettel.formatUrlScript": {
+        "zettel.urlSchema": {
           "type": "string",
-          "default": "./scripts/formatUrl",
-          "description": "Script how to format the URL."
+          "default": "zettel",
+          "description": "The custom schema used by the Zettel URLs."
         },
         "zettel.onSaveScript": {
           "type": "string",
@@ -170,14 +170,6 @@
     ],
     "views": {
       "zettel": [
-        {
-          "id": "zettelWarnings",
-          "name": "Warnings"
-        },
-        {
-          "id": "zettelStoryRiver",
-          "name": "Story River"
-        },
         {
           "id": "zettelOutboundLinks",
           "name": "Outbound Links"

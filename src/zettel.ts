@@ -3,7 +3,8 @@ import * as path from "path"
 import * as vscode from "vscode"
 import * as moment from "moment"
 import { config } from "./config"
-import { setEditorPosition, positionAtInitCursorPattern } from "./utils"
+import { setEditorPosition, positionAtInitCursorPattern, nextUidInput } from "./utils"
+import { getLinks, Link, LinkType } from "./links"
 
 function fireZettel(eventEmitter: vscode.EventEmitter<Zettel>) {
   return (fileUri: vscode.Uri) => {
@@ -13,7 +14,8 @@ function fireZettel(eventEmitter: vscode.EventEmitter<Zettel>) {
 }
 
 export class Zettel {
-  static lookup: { [uid: string]: Zettel } = {}
+  private static byUid: { [uid: string]: Zettel } = {}
+  private static byTitle: { [title: string]: Zettel } = {}
 
   private static zettelsWatcher = vscode.workspace.createFileSystemWatcher(
     path.join(config.zettelsFolder, `*${config.extension}`),
@@ -91,7 +93,7 @@ export class Zettel {
   static readonly onDidClose = Zettel._onDidClose.event
 
   static async reload() {
-    Zettel.lookup = {}
+    Zettel.byUid = {}
     const zettels = (await vscode.workspace.fs.readDirectory(vscode.Uri.file(config.zettelsFolder)))
       .filter(entry => entry[1] === vscode.FileType.File && entry[0].endsWith(config.extension))
       .map(entry => Zettel.create(path.basename(entry[0], config.extension)))
@@ -99,40 +101,55 @@ export class Zettel {
       zettel.processContent()
     }
     for (const zettel of zettels) {
+      zettel.processLinks()
       zettel.checkWarnings()
     }
   }
 
   static create(uid: string, created?: moment.Moment) {
-    if (uid in Zettel.lookup) {
+    if (uid in Zettel.byUid) {
       throw new Error(`Zettel with unique identifier '${uid}' already exists.`)
     }
     const zettel = new Zettel(uid, created)
-    Zettel.lookup[uid] = zettel
+    Zettel.byUid[uid] = zettel
     return zettel
   }
 
   static from(uid: string | vscode.Uri | null | undefined) {
     if (uid instanceof vscode.Uri) uid = path.basename(uid.fsPath, config.extension)
-    if (typeof uid !== "string") return null
-    if (!(uid in Zettel.lookup)) {
-      const zettel = new Zettel(uid)
-      if (fs.existsSync(zettel.file)) {
-        Zettel.lookup[uid] = zettel
-        zettel.processContent()
-      } else {
-        return null
-      }
+    if (typeof uid !== "string") return undefined
+    return Zettel.byUid[uid]
+  }
+
+  static next(context: vscode.ExtensionContext, args: { uid?: string; title?: string }) {
+    const input = nextUidInput(context)
+    const created = config.uidInput === "timestamp" ? input : Date.now()
+    const zettel = Zettel.create(args.uid || config.formatUid(input), moment(created))
+    zettel.title = args.title
+    return zettel
+  }
+
+  static async writeNew(zettel: Zettel) {
+    const content = config.formatContent(zettel.uid, zettel.created?.valueOf(), zettel.title)
+    try {
+      await fs.promises.writeFile(zettel.file, content, { flag: "wx" })
+      zettel.updateContent()
+      return true
+    } catch (e) {
+      return false
     }
-    return Zettel.lookup[uid]
+  }
+
+  static fromTitle(title: string): Zettel | undefined {
+    return Zettel.byTitle[title]
   }
 
   static get uids() {
-    return Object.keys(Zettel.lookup)
+    return Object.keys(Zettel.byUid)
   }
 
   static get zettels() {
-    return Object.values(Zettel.lookup)
+    return Object.values(Zettel.byUid)
   }
 
   file: string
@@ -141,9 +158,10 @@ export class Zettel {
   get createdDateTime() {
     return this.created?.format("YYYY-MM-DD HH:mm:ss")
   }
+  links: Link[] = []
   outbound: Zettel[] = []
   inbound: Set<Zettel> = new Set()
-  deadlinks: string[] = []
+  deadlinks: Link[] = []
   warnings: string[] = []
   title: string | undefined
   truncation: string | undefined
@@ -166,6 +184,7 @@ export class Zettel {
     const titleMatch = content.match(/(?:^|\n)# (.+)(?:\n|$)/)
     if (titleMatch !== null) {
       this.title = titleMatch[1]
+      Zettel.byTitle[this.title] = this
     }
     config.initCursorPattern.lastIndex = 0
     const truncationMatch = content.match(config.initCursorPattern)
@@ -178,19 +197,28 @@ export class Zettel {
       }
     }
     for (const zettel of this.outbound) zettel.inbound.delete(this)
+    this.links = getLinks(content).map(args => args.link)
+    this.label = this.title || this.truncation || this.createdDateTime || this.uid
+  }
+
+  processLinks() {
+    for (const zettel of this.outbound) zettel.inbound.delete(this)
     this.deadlinks = []
     this.outbound = []
-    for (const match of content.matchAll(/\[\[([^\]]*)\]\]/g)) {
-      const text = match[1]
-      const zettel = Zettel.from(text)
-      if (zettel !== null) {
-        this.outbound.push(zettel)
+    for (const link of this.links) {
+      if (link.zettel) {
+        this.outbound.push(link.zettel)
+      } else if (link.type === LinkType.Wiki) {
+        const zettel = Zettel.byTitle[link.text]
+        if (zettel) {
+          this.outbound.push(zettel)
+          continue
+        }
       } else {
-        this.deadlinks.push(text)
+        this.deadlinks.push(link)
       }
     }
     for (const zettel of this.outbound) zettel.inbound.add(this)
-    this.label = this.title || this.truncation || this.createdDateTime || this.uid
   }
 
   checkWarnings() {
@@ -205,6 +233,7 @@ export class Zettel {
 
   updateContent() {
     this.processContent()
+    this.processLinks()
     this.checkWarnings()
   }
 

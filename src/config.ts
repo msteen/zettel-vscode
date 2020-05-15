@@ -24,6 +24,6 @@ export const config = (config => ({
   extension: config.get<string>("extension")!,
   formatContent: require(resolveVars(config.get<string>("formatContentScript")!)),
   initCursorPattern: new RegExp(config.get<string>("initCursorPattern")!),
-  formatUrl: require(resolveVars(config.get<string>("formatUrlScript")!)),
+  urlSchema: config.get<string>("urlSchema")!,
   onSave: require(resolveVars(config.get<string>("onSaveScript")!)),
 }))(vscode.workspace.getConfiguration("zettel"))

@@ -1,5 +1,6 @@
 [ ] Figure out a syntax for anchors.
 [ ] Figure out how to quote while referencing to a source.
+[ ] Setup logging for #zettelkasten on logs.zettelkasten.de https://github.com/whitequark/irclogger
 
 Split up the project in multiple source files.
 Clone the example Zettelkasten and use it to create an index and update the views accordingly.

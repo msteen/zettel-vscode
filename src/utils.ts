@@ -30,11 +30,5 @@ function nextTimestamp() {
 }
 
 export function nextUidInput(context: vscode.ExtensionContext) {
-  return config.uidInput === "count" ? nextCount(context) : moment(nextTimestamp())
-}
-
-export function getLinkedUid(document: vscode.TextDocument, position: vscode.Position): string | null {
-  const range = document.getWordRangeAtPosition(position, /\[\[[^\]]*\]\]/)
-  if (range === undefined) return null
-  return document.getText(range).replace(/\[\[([^\]]*)\]\]/, "$1")
+  return config.uidInput === "count" ? nextCount(context) : nextTimestamp()
 }

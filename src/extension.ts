@@ -21,9 +21,7 @@ import {
   refreshAll,
 } from "./commands"
 import { activateOutboundLinksView } from "./views/outboundLinks"
-import { activateWarningsView } from "./views/warnings"
 import { activateInboundLinksView } from "./views/inboundLinks"
-import { activateStoryRiverView } from "./views/storyRiver"
 
 // @ts-ignore
 global.inspect = (...args: any[]) => console.log(...args.map(inspect))
@@ -37,7 +35,7 @@ export async function activate(context: vscode.ExtensionContext) {
     ...[
       registerCommand("zettel.newUid", () => newUid(context)),
       registerCommand("zettel.parseClipboardTextToUid", () => parseClipboardTextToUid()),
-      registerCommand("zettel.new", args => newZettel(context, args?.uid)),
+      registerCommand("zettel.new", args => newZettel(context, args)),
       registerCommand("zettel.open", () => openZettel()),
       registerCommand("zettel.show", (zettel: Zettel) => showZettel(zettel)),
       registerCommand("zettel.uidToClipboard", () => uidToClipboard()),
@@ -54,13 +52,17 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     ...[
       vscode.languages.registerCompletionItemProvider(markdown, new ZettelCompletionItemProvider()),
-      vscode.languages.registerDefinitionProvider(markdown, new ZettelDefinitionProvider()),
+      vscode.languages.registerDefinitionProvider(markdown, new ZettelDefinitionProvider(context)),
       vscode.languages.registerDocumentLinkProvider(markdown, new ZettelDocumentLinkProvider()),
     ],
   )
 
-  activateWarningsView()
-  activateStoryRiverView()
+  // Probably better integrated in a panel like Problems for TypeScript.
+  // activateWarningsView()
+
+  // VS Code extension API is simply not good enough to support this properly.
+  // activateStoryRiverView()
+
   activateOutboundLinksView()
   activateInboundLinksView()
 
